@@ -28,7 +28,7 @@ log_error() {
 # Check if running as root
 if [[ $EUID -ne 0 ]]; then
    log_error "Script ini harus dijalankan sebagai root atau dengan sudo"
-   log_error "Coba jalankan: curl -sSL https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/create_user.sh | sudo bash"
+   log_error "Coba jalankan: curl -sSL https://raw.githubusercontent.com/achmadnurulfauzie/infra/refs/heads/main/create_user.sh | sudo bash"
    exit 1
 fi
 
@@ -135,21 +135,6 @@ EOF
 chown "$USERNAME:$USERNAME" "$USER_HOME/.bashrc"
 
 log_info "Setup selesai!"
-echo ""
-log_info "=== RINGKASAN ==="
-log_info "Script: $SCRIPT_NAME v$SCRIPT_VERSION"
-log_info "Username: $USERNAME"
-log_info "Password: $PASSWORD"
-log_info "Home Directory: $USER_HOME"
-log_info "Sudo Access: Ya (tanpa password)"
-log_info "Ubuntu Version: $UBUNTU_VERSION"
-echo ""
-log_warning "PERINGATAN KEAMANAN:"
-log_warning "- Password yang digunakan masih bisa diperkuat"
-log_warning "- User memiliki akses sudo tanpa password"
-log_warning "- Gunakan hanya untuk environment development/testing"
-log_warning "- Pertimbangkan untuk mengganti password: passwd $USERNAME"
-log_warning "- Script dijalankan via curl | bash - pastikan source terpercaya"
 echo ""
 log_info "Untuk login: su - $USERNAME"
 log_info "Atau: ssh $USERNAME@\$(hostname -I | awk '{print \$1}')"
