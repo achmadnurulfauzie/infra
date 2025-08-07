@@ -45,7 +45,7 @@ log_info "Detected Ubuntu version: $UBUNTU_VERSION"
 log_info "Starting $SCRIPT_NAME v$SCRIPT_VERSION"
 
 USERNAME="achmad"
-PASSWORD="P@ssw0rd123"
+PASSWORD="P@ssw0rd123456"
 
 log_info "Memulai pembuatan user $USERNAME..."
 
