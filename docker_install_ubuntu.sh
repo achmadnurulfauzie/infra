@@ -14,8 +14,8 @@ sudo usermod -aG docker $USER
 sudo usermod -aG docker ubuntu
 sudo chmod 666 /var/run/docker.sock
 
-systemctl status docker
-systemctl enable docker
-systemctl start docker
+sudo systemctl status docker
+sudo systemctl enable docker
+sudo systemctl start docker
 docker version
 docker info
