@@ -2,6 +2,11 @@
 ```
 curl -sSL https://raw.githubusercontent.com/achmadnurulfauzie/infra/main/docker_install_ubuntu.sh | bash
 ```
+# net_audit_network_ubuntu
+```
+curl -sSL https://raw.githubusercontent.com/achmadnurulfauzie/infra/main/net-audit.sh | sudo bash
+```
+
 
 # create_user.sh
 ```
