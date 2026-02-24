@@ -10,7 +10,7 @@ sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin 
 docker info
 docker version
 groupadd docker
-sudo usermod -aG docker $USER
+sudo usermod -aG docker $USER --no-pager
 sudo usermod -aG docker ubuntu
 sudo chmod 666 /var/run/docker.sock
 
