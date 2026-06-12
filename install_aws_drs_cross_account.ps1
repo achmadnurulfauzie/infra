@@ -138,7 +138,7 @@ function Invoke-DownloadFirstAvailable {
                 throw "The downloaded file is empty: $Destination"
             }
             catch {
-                Write-Warning "Download failed from $url: $($_.Exception.Message)"
+                Write-Warning "Download failed from $($url): $($_.Exception.Message)"
                 Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
                 if ($attempt -lt $AttemptsPerUrl) {
                     Start-Sleep -Seconds 2
