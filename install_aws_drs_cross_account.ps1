@@ -227,16 +227,28 @@ try {
         [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
     $osVersion = [Environment]::OSVersion.Version
-    if (($osVersion.Major -eq 6 -and $osVersion.Minor -le 1) -or
-        ($osVersion.Major -eq 6 -and $osVersion.Minor -eq 2)) {
-        throw "Windows version $osVersion requires an AWS DRS legacy Windows installer. This script intentionally uses the current standard installer and will not continue."
+    $installerSubPath = 'windows/AwsReplicationWindowsInstaller.exe'
+
+    if ($osVersion.Major -eq 6) {
+        if ($osVersion.Minor -eq 1) {
+            $installerSubPath = 'windows_legacy/windows_2008_legacy/AwsReplicationWindows2008LegacyInstaller.exe'
+            Write-Log 'Legacy Windows Server 2008 R2 / Windows 7 detected. Using legacy installer.'
+        }
+        elseif ($osVersion.Minor -eq 2 -or $osVersion.Minor -eq 3) {
+            $installerSubPath = 'windows_legacy/windows_2012_legacy/AwsReplicationWindows2012LegacyInstaller.exe'
+            Write-Log 'Legacy Windows Server 2012 / 2012 R2 detected. Using legacy installer.'
+        }
+        else {
+            throw "Unsupported legacy Windows version: $osVersion"
+        }
     }
 
     $workDir = Join-Path ([IO.Path]::GetTempPath()) ("aws-drs-agent-" + [Guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $workDir -Force)
 
-    $installerPath = Join-Path $workDir 'AwsReplicationWindowsInstaller.exe'
-    $hashPath = Join-Path $workDir 'AwsReplicationWindowsInstaller.exe.sha512'
+    $installerFilename = Split-Path -Leaf $installerSubPath
+    $installerPath = Join-Path $workDir $installerFilename
+    $hashPath = Join-Path $workDir "$installerFilename.sha512"
 
     Write-Log "AWS Region     : $Region"
     Write-Log "Windows        : $([Environment]::OSVersion.VersionString)"
@@ -298,13 +310,13 @@ try {
     }
 
     $installerUrls = @(
-        "https://aws-elastic-disaster-recovery-${Region}.s3.${Region}.amazonaws.com/latest/windows/AwsReplicationWindowsInstaller.exe",
-        "https://aws-elastic-disaster-recovery-${Region}.s3.dualstack.${Region}.amazonaws.com/latest/windows/AwsReplicationWindowsInstaller.exe"
+        "https://aws-elastic-disaster-recovery-${Region}.s3.${Region}.amazonaws.com/latest/$installerSubPath",
+        "https://aws-elastic-disaster-recovery-${Region}.s3.dualstack.${Region}.amazonaws.com/latest/$installerSubPath"
     )
 
     $hashUrls = @(
-        "https://aws-elastic-disaster-recovery-hashes-${Region}.s3.${Region}.amazonaws.com/latest/windows/AwsReplicationWindowsInstaller.exe.sha512",
-        "https://aws-elastic-disaster-recovery-hashes-${Region}.s3.dualstack.${Region}.amazonaws.com/latest/windows/AwsReplicationWindowsInstaller.exe.sha512"
+        "https://aws-elastic-disaster-recovery-hashes-${Region}.s3.${Region}.amazonaws.com/latest/${installerSubPath}.sha512",
+        "https://aws-elastic-disaster-recovery-hashes-${Region}.s3.dualstack.${Region}.amazonaws.com/latest/${installerSubPath}.sha512"
     )
 
     Invoke-DownloadFirstAvailable -Urls $hashUrls -Destination $hashPath
