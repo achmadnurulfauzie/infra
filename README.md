@@ -40,3 +40,31 @@ sudo bash install-disk-monitor.sh \
   -m "/boot,/boot/efi" \
   -M systemd
 ```
+
+# manage_swap.sh
+
+Interactive swap manager untuk Linux (Ubuntu / Debian / CentOS / RHEL / Rocky / AlmaLinux).
+
+```
+curl -sSL https://raw.githubusercontent.com/achmadnurulfauzie/infra/main/manage_swap.sh | sudo bash
+```
+
+## Fitur
+
+- **Pre-check** — deteksi distro, RAM, disk space, swap aktif, cek `/swapfile`
+- **Multi-distro** — Ubuntu, Debian, CentOS, RHEL, Rocky, AlmaLinux, Fedora
+- **Input dinamis** — ukuran swap fleksibel (`4G`, `8G`, `2048M`)
+- **Auto-rekomendasi** — suggest ukuran swap berdasarkan RAM
+- **Resize** — bisa resize `/swapfile` yang sudah ada
+- **Persistent** — otomatis entry ke `/etc/fstab`
+- **vm.swappiness** — setting interaktif + persist ke `/etc/sysctl.d/99-swappiness.conf`
+- **Verifikasi** — tampilkan `swapon --show`, `free -h`, dan cek fstab di akhir
+
+## Menu Interaktif
+
+| Pilihan | Aksi                                      |
+|---------|--------------------------------------------|
+| `1`     | Buat / Resize swap (`/swapfile`)           |
+| `2`     | Konfigurasi `vm.swappiness` saja           |
+| `3`     | Buat / Resize swap + vm.swappiness         |
+| `4`     | Keluar                                     |
