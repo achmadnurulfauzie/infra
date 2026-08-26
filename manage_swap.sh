@@ -4,9 +4,9 @@
 # ============================================================================
 #  Supported distros : Ubuntu / Debian / CentOS / RHEL / Rocky / AlmaLinux
 #  Requires          : root or sudo privileges
-#  Version           : 1.0
+#  Version           : 2.0
 #  Author            : DevOps Engineering
-#  Last Updated      : 2025-10-27
+#  Last Updated      : 2026-08-26
 # ============================================================================
 set -euo pipefail
 
@@ -23,7 +23,8 @@ WARN="${YELLOW}⚠${NC}"
 ERR="${RED}✖${NC}"
 INFO="${CYAN}ℹ${NC}"
 
-SWAPFILE="/swapfile"
+SWAPFILE_BASE="/swapfile"
+SWAPFILE_MAX=5    # Maksimum swapfile tambahan: /swapfile1 .. /swapfile5
 
 # ── Helper Functions ────────────────────────────────────────────────────────
 
@@ -154,34 +155,44 @@ precheck() {
 
     echo ""
 
-    # ── Cek /swapfile ───────────────────────────────────────────────────────
+    # ── Cek semua swapfile (/swapfile, /swapfile1 .. /swapfile5) ─────────────
     separator
-    echo -e " ${INFO} ${BOLD}CEK /swapfile${NC}"
+    echo -e " ${INFO} ${BOLD}CEK SWAPFILES${NC}"
     separator
 
-    if [[ -f "$SWAPFILE" ]]; then
-        HAS_SWAPFILE=true
-        local swapfile_size
-        swapfile_size=$(stat -c%s "$SWAPFILE" 2>/dev/null || stat -f%z "$SWAPFILE" 2>/dev/null)
-        local swapfile_mb=$(( swapfile_size / 1048576 ))
-        echo -e "   ${OK} File ${BOLD}${SWAPFILE}${NC} ${GREEN}ditemukan${NC}"
-        echo -e "   ${BOLD}Ukuran file${NC}     : $(bytes_to_human $swapfile_size) (${swapfile_mb} MB)"
-        echo -e "   ${BOLD}Permissions${NC}     : $(stat -c%a "$SWAPFILE" 2>/dev/null || stat -f%Lp "$SWAPFILE" 2>/dev/null)"
-        SWAPFILE_SIZE_MB=$swapfile_mb
+    SWAPFILE_COUNT=0          # jumlah swapfile yang ditemukan
+    SWAPFILE_TOTAL_MB=0       # total ukuran semua swapfile
 
-        # cek apakah aktif sebagai swap
-        if swapon --show=NAME --noheadings 2>/dev/null | grep -q "$SWAPFILE"; then
-            echo -e "   ${OK} ${SWAPFILE} sedang ${GREEN}aktif sebagai swap${NC}"
-            SWAPFILE_ACTIVE=true
-        else
-            echo -e "   ${WARN} ${SWAPFILE} ada tapi ${YELLOW}tidak aktif sebagai swap${NC}"
-            SWAPFILE_ACTIVE=false
+    # Bangun daftar path: /swapfile, /swapfile1, ..., /swapfile5
+    local _swap_paths=("${SWAPFILE_BASE}")
+    for i in $(seq 1 $SWAPFILE_MAX); do
+        _swap_paths+=("${SWAPFILE_BASE}${i}")
+    done
+
+    for _sf in "${_swap_paths[@]}"; do
+        if [[ -f "$_sf" ]]; then
+            (( SWAPFILE_COUNT++ )) || true
+            local _sf_size
+            _sf_size=$(stat -c%s "$_sf" 2>/dev/null || stat -f%z "$_sf" 2>/dev/null)
+            local _sf_mb=$(( _sf_size / 1048576 ))
+            SWAPFILE_TOTAL_MB=$(( SWAPFILE_TOTAL_MB + _sf_mb ))
+
+            echo -e "   ${OK} ${BOLD}${_sf}${NC} ${GREEN}ditemukan${NC}  —  $(bytes_to_human $_sf_size) (${_sf_mb} MB)"
+
+            # cek apakah aktif sebagai swap
+            if swapon --show=NAME --noheadings 2>/dev/null | grep -qx "$_sf"; then
+                echo -e "      └─ ${GREEN}aktif sebagai swap${NC}"
+            else
+                echo -e "      └─ ${YELLOW}tidak aktif sebagai swap${NC}"
+            fi
         fi
+    done
+
+    if (( SWAPFILE_COUNT == 0 )); then
+        echo -e "   ${WARN} ${YELLOW}Tidak ada swapfile ditemukan${NC} (/swapfile .. /swapfile${SWAPFILE_MAX})"
     else
-        HAS_SWAPFILE=false
-        SWAPFILE_ACTIVE=false
-        SWAPFILE_SIZE_MB=0
-        echo -e "   ${WARN} File ${BOLD}${SWAPFILE}${NC} ${YELLOW}tidak ditemukan${NC}"
+        echo ""
+        echo -e "   ${INFO} Total swapfile ditemukan : ${BOLD}${SWAPFILE_COUNT}${NC}  (total ${SWAPFILE_TOTAL_MB} MB)"
     fi
 
     echo ""
@@ -210,9 +221,26 @@ precheck() {
     echo ""
 }
 
-# ── Create / Resize Swap ───────────────────────────────────────────────────
+# ── Create / Add Swap ──────────────────────────────────────────────────────
 
-create_or_resize_swap() {
+# Cari slot swapfile yang tersedia berikutnya
+# Urutan: /swapfile → /swapfile1 → /swapfile2 → ... → /swapfile5
+find_next_swapfile() {
+    if [[ ! -f "${SWAPFILE_BASE}" ]]; then
+        echo "${SWAPFILE_BASE}"
+        return 0
+    fi
+    for i in $(seq 1 $SWAPFILE_MAX); do
+        if [[ ! -f "${SWAPFILE_BASE}${i}" ]]; then
+            echo "${SWAPFILE_BASE}${i}"
+            return 0
+        fi
+    done
+    # Semua slot terpakai
+    return 1
+}
+
+create_or_add_swap() {
     separator
     echo -e " ${INFO} ${BOLD}KONFIGURASI SWAP${NC}"
     separator
@@ -220,9 +248,21 @@ create_or_resize_swap() {
     # Summary sebelum input
     echo -e "   RAM saat ini     : ${BOLD}${TOTAL_RAM_MB} MB${NC}"
     echo -e "   Swap saat ini    : ${BOLD}${CURRENT_SWAP_MB} MB${NC}"
-    if [[ "$HAS_SWAPFILE" == true ]]; then
-        echo -e "   /swapfile size   : ${BOLD}${SWAPFILE_SIZE_MB} MB${NC}"
+    if (( SWAPFILE_COUNT > 0 )); then
+        echo -e "   Swapfile aktif   : ${BOLD}${SWAPFILE_COUNT}${NC} file (total ${SWAPFILE_TOTAL_MB} MB)"
     fi
+    echo ""
+
+    # ── Cek apakah masih ada slot tersedia ──────────────────────────────────
+    local target_swapfile
+    if ! target_swapfile=$(find_next_swapfile); then
+        echo -e "   ${ERR} ${RED}Semua slot swapfile sudah terpakai!${NC}"
+        echo -e "      Slot yang ada: /swapfile, /swapfile1 .. /swapfile${SWAPFILE_MAX}"
+        echo -e "      Hapus salah satu swapfile secara manual jika ingin menambah."
+        return 1
+    fi
+
+    echo -e "   ${INFO} Swapfile baru akan dibuat di: ${BOLD}${target_swapfile}${NC}"
     echo ""
 
     # Rekomendasi
@@ -234,13 +274,25 @@ create_or_resize_swap() {
     else
         recommended=$(( TOTAL_RAM_MB / 2 ))
     fi
-    echo -e "   ${INFO} Rekomendasi swap berdasarkan RAM: ${GREEN}${recommended} MB ($(( recommended / 1024 )) GB)${NC}"
+    # Kurangi dengan swap yang sudah ada
+    local recommended_additional=$(( recommended - CURRENT_SWAP_MB ))
+    (( recommended_additional < 0 )) && recommended_additional=0
+
+    echo -e "   ${INFO} Rekomendasi total swap berdasarkan RAM : ${GREEN}${recommended} MB ($(( recommended / 1024 )) GB)${NC}"
+    if (( CURRENT_SWAP_MB > 0 )); then
+        echo -e "   ${INFO} Swap sudah ada                        : ${YELLOW}${CURRENT_SWAP_MB} MB${NC}"
+        if (( recommended_additional > 0 )); then
+            echo -e "   ${INFO} Tambahan yang disarankan               : ${GREEN}${recommended_additional} MB ($(( recommended_additional / 1024 )) GB)${NC}"
+        else
+            echo -e "   ${INFO} Swap sudah memenuhi/melebihi rekomendasi."
+        fi
+    fi
     echo ""
 
     # ── Input ukuran swap ───────────────────────────────────────────────────
     local swap_size_input
     while true; do
-        echo -ne "   Masukkan ukuran swap yang diinginkan (contoh: ${YELLOW}4G${NC}, ${YELLOW}8G${NC}, ${YELLOW}2048M${NC}): "
+        echo -ne "   Masukkan ukuran swap ${BOLD}tambahan${NC} (contoh: ${YELLOW}4G${NC}, ${YELLOW}8G${NC}, ${YELLOW}2048M${NC}): "
         read -r swap_size_input
 
         if [[ -z "$swap_size_input" ]]; then
@@ -289,44 +341,21 @@ create_or_resize_swap() {
     local disk_avail_mb
     disk_avail_mb=$(df -BM / | awk 'NR==2 {print $4}' | tr -d 'M')
 
-    # Hitung kebutuhan: jika sudah ada swapfile, kita hanya perlu delta
-    local needed_mb=$NEW_SWAP_MB
-    if [[ "$HAS_SWAPFILE" == true ]]; then
-        needed_mb=$(( NEW_SWAP_MB - SWAPFILE_SIZE_MB ))
-        (( needed_mb < 0 )) && needed_mb=0
-    fi
-
-    if (( needed_mb > 0 )) && (( disk_avail_mb < (needed_mb + 512) )); then
+    if (( disk_avail_mb < (NEW_SWAP_MB + 512) )); then
         echo -e "   ${ERR} ${RED}Disk space tidak cukup!${NC}"
-        echo -e "      Dibutuhkan : ~${needed_mb} MB"
+        echo -e "      Dibutuhkan : ~${NEW_SWAP_MB} MB"
         echo -e "      Tersedia   : ${disk_avail_mb} MB"
         echo -e "      Sisakan minimal 512 MB untuk sistem."
         exit 1
     fi
 
-    # ── Jika swap sudah sama ukurannya ──────────────────────────────────────
-    if [[ "$HAS_SWAPFILE" == true ]] && (( SWAPFILE_SIZE_MB == NEW_SWAP_MB )); then
-        echo -e "   ${OK} /swapfile sudah berukuran ${GREEN}${NEW_SWAP_DISPLAY}${NC}."
-
-        if [[ "$SWAPFILE_ACTIVE" == false ]]; then
-            echo -e "   ${INFO} Mengaktifkan swap..."
-            swapon "$SWAPFILE"
-            echo -e "   ${OK} Swap diaktifkan."
-        else
-            echo -e "   ${OK} Swap sudah aktif. Tidak ada perubahan."
-        fi
-        return 0
-    fi
-
     # ── Konfirmasi ──────────────────────────────────────────────────────────
     echo -e "   ${BOLD}Ringkasan perubahan:${NC}"
-    if [[ "$HAS_SWAPFILE" == true ]]; then
-        echo -e "     Aksi         : ${YELLOW}Resize${NC} /swapfile"
-        echo -e "     Dari         : ${SWAPFILE_SIZE_MB} MB"
-        echo -e "     Menjadi      : ${NEW_SWAP_MB} MB (${NEW_SWAP_DISPLAY})"
-    else
-        echo -e "     Aksi         : ${GREEN}Buat baru${NC} /swapfile"
-        echo -e "     Ukuran       : ${NEW_SWAP_MB} MB (${NEW_SWAP_DISPLAY})"
+    echo -e "     Aksi         : ${GREEN}Buat baru${NC} ${target_swapfile}"
+    echo -e "     Ukuran       : ${NEW_SWAP_MB} MB (${NEW_SWAP_DISPLAY})"
+    if (( CURRENT_SWAP_MB > 0 )); then
+        echo -e "     Swap lama    : ${CURRENT_SWAP_MB} MB (${BOLD}tetap aktif${NC})"
+        echo -e "     Total swap   : $(( CURRENT_SWAP_MB + NEW_SWAP_MB )) MB"
     fi
     echo ""
 
@@ -339,60 +368,46 @@ create_or_resize_swap() {
 
     echo ""
 
-    # ── Disable existing swap jika ada ──────────────────────────────────────
-    if [[ "$SWAPFILE_ACTIVE" == true ]]; then
-        echo -e "   ${INFO} Menonaktifkan swap lama..."
-        swapoff "$SWAPFILE" 2>/dev/null || true
-        echo -e "   ${OK} Swap lama dinonaktifkan."
-    fi
-
-    # ── Hapus swapfile lama jika ada ────────────────────────────────────────
-    if [[ "$HAS_SWAPFILE" == true ]]; then
-        echo -e "   ${INFO} Menghapus /swapfile lama..."
-        rm -f "$SWAPFILE"
-        echo -e "   ${OK} /swapfile lama dihapus."
-    fi
-
-    # ── Buat swapfile baru ──────────────────────────────────────────────────
-    echo -e "   ${INFO} Membuat /swapfile baru (${NEW_SWAP_DISPLAY})..."
+    # ── Buat swapfile baru (tanpa menghapus yang lama) ──────────────────────
+    echo -e "   ${INFO} Membuat ${target_swapfile} (${NEW_SWAP_DISPLAY})..."
     echo -e "       Ini mungkin membutuhkan waktu beberapa saat..."
 
     # Coba fallocate dulu, fallback ke dd
     if command -v fallocate &>/dev/null; then
-        if fallocate -l "${NEW_SWAP_MB}M" "$SWAPFILE" 2>/dev/null; then
-            echo -e "   ${OK} /swapfile dibuat dengan fallocate."
+        if fallocate -l "${NEW_SWAP_MB}M" "${target_swapfile}" 2>/dev/null; then
+            echo -e "   ${OK} ${target_swapfile} dibuat dengan fallocate."
         else
             echo -e "   ${WARN} fallocate gagal, menggunakan dd sebagai fallback..."
-            dd if=/dev/zero of="$SWAPFILE" bs=1M count="$NEW_SWAP_MB" status=progress
-            echo -e "   ${OK} /swapfile dibuat dengan dd."
+            dd if=/dev/zero of="${target_swapfile}" bs=1M count="$NEW_SWAP_MB" status=progress
+            echo -e "   ${OK} ${target_swapfile} dibuat dengan dd."
         fi
     else
-        dd if=/dev/zero of="$SWAPFILE" bs=1M count="$NEW_SWAP_MB" status=progress
-        echo -e "   ${OK} /swapfile dibuat dengan dd."
+        dd if=/dev/zero of="${target_swapfile}" bs=1M count="$NEW_SWAP_MB" status=progress
+        echo -e "   ${OK} ${target_swapfile} dibuat dengan dd."
     fi
 
     # ── Set permissions ─────────────────────────────────────────────────────
     echo -e "   ${INFO} Set permissions 600..."
-    chmod 600 "$SWAPFILE"
+    chmod 600 "${target_swapfile}"
     echo -e "   ${OK} Permissions di-set."
 
     # ── Format as swap ──────────────────────────────────────────────────────
     echo -e "   ${INFO} Memformat sebagai swap..."
-    mkswap "$SWAPFILE"
+    mkswap "${target_swapfile}"
     echo -e "   ${OK} Format selesai."
 
     # ── Enable swap ─────────────────────────────────────────────────────────
     echo -e "   ${INFO} Mengaktifkan swap..."
-    swapon "$SWAPFILE"
+    swapon "${target_swapfile}"
     echo -e "   ${OK} Swap aktif!"
 
     # ── Persist di /etc/fstab ───────────────────────────────────────────────
     echo -e "   ${INFO} Mengecek /etc/fstab..."
-    if grep -q "$SWAPFILE" /etc/fstab 2>/dev/null; then
-        echo -e "   ${OK} Entry ${SWAPFILE} sudah ada di /etc/fstab."
+    if grep -q "${target_swapfile}" /etc/fstab 2>/dev/null; then
+        echo -e "   ${OK} Entry ${target_swapfile} sudah ada di /etc/fstab."
     else
         echo -e "   ${INFO} Menambahkan entry ke /etc/fstab..."
-        echo "${SWAPFILE} none swap sw 0 0" >> /etc/fstab
+        echo "${target_swapfile} none swap sw 0 0" >> /etc/fstab
         echo -e "   ${OK} Entry ditambahkan ke /etc/fstab (persistent setelah reboot)."
     fi
 
@@ -520,9 +535,9 @@ main() {
     separator
     echo -e " ${INFO} ${BOLD}APA YANG INGIN DILAKUKAN?${NC}"
     separator
-    echo -e "   ${BOLD}1)${NC} Buat / Resize swap (${SWAPFILE})"
+    echo -e "   ${BOLD}1)${NC} Buat / Tambah swap (${SWAPFILE_BASE}[1..${SWAPFILE_MAX}])"
     echo -e "   ${BOLD}2)${NC} Konfigurasi vm.swappiness saja"
-    echo -e "   ${BOLD}3)${NC} Buat / Resize swap + Konfigurasi vm.swappiness"
+    echo -e "   ${BOLD}3)${NC} Buat / Tambah swap + Konfigurasi vm.swappiness"
     echo -e "   ${BOLD}4)${NC} Keluar"
     echo ""
 
@@ -533,7 +548,7 @@ main() {
 
     case "$choice" in
         1)
-            create_or_resize_swap
+            create_or_add_swap
             final_verification
             ;;
         2)
@@ -541,7 +556,7 @@ main() {
             final_verification
             ;;
         3)
-            create_or_resize_swap
+            create_or_add_swap
             # Refresh swappiness value after swap changes
             CURRENT_SWAPPINESS=$(cat /proc/sys/vm/swappiness 2>/dev/null || echo "unknown")
             configure_swappiness
