@@ -46,7 +46,7 @@ sudo bash install-disk-monitor.sh \
 Interactive swap manager untuk Linux (Ubuntu / Debian / CentOS / RHEL / Rocky / AlmaLinux).
 
 ```
-curl -sSL https://raw.githubusercontent.com/achmadnurulfauzie/infra/main/manage_swap.sh | sudo bash
+curl -fL https://raw.githubusercontent.com/achmadnurulfauzie/infra/main/manage_swap.sh -o /tmp/manage_swap.sh && chmod +x /tmp/manage_swap.sh && sudo bash /tmp/manage_swap.sh
 ```
 
 ## Fitur
